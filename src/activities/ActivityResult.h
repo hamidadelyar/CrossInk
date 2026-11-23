@@ -7,6 +7,8 @@
 #include <utility>
 #include <variant>
 
+#include "ai/AiRecapJob.h"
+#include "ai/AiRecapSettings.h"
 #include "reader/EpubReaderMenuModel.h"
 #include "util/FrontlightPanelModel.h"
 
@@ -50,6 +52,12 @@ struct IntervalResult {
 
 struct OptionSelectionResult {
   uint8_t index = 0;
+};
+
+struct AiRecapOptionsResult {
+  AiRecap::Options options;
+  AiRecapProvider provider = AiRecapProvider::OpenAI;
+  std::string model;
 };
 
 struct PageResult {
@@ -130,9 +138,10 @@ struct ClippingJumpResult {
 
 using ResultVariant =
     std::variant<std::monostate, WifiResult, KeyboardResult, MenuResult, ChapterResult, PercentResult, IntervalResult,
-                 OptionSelectionResult, PageResult, NetworkModeResult, FootnoteResult, BookmarkResult,
-                 FileBrowserActionResult, FilePathResult, WordResult, ReadingStatsResult, ClippingResult,
-                 TtfRenderOptionsResult, DictionaryClippingRequest, ClippingJumpResult, FrontlightPanelResult>;
+                 OptionSelectionResult, AiRecapOptionsResult, PageResult, NetworkModeResult, FootnoteResult,
+                 BookmarkResult, FileBrowserActionResult, FilePathResult, WordResult, ReadingStatsResult,
+                 ClippingResult, TtfRenderOptionsResult, DictionaryClippingRequest, ClippingJumpResult,
+                 FrontlightPanelResult>;
 
 struct ActivityResult {
   bool isCancelled = false;

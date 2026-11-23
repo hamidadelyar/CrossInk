@@ -27,6 +27,8 @@
 
 #include "../settings/DictionarySelectActivity.h"
 #include "../settings/KOReaderSettingsActivity.h"
+#include "AiRecapActivity.h"
+#include "AiRecapOptionsActivity.h"
 #include "BookStatsActivity.h"
 #include "BookStatsTracking.h"
 #include "ClipSelectionActivity.h"
@@ -66,6 +68,7 @@
 #include "activities/settings/StatusBarSettingsActivity.h"
 #include "activities/util/ConfirmationActivity.h"
 #include "activities/util/IntervalSelectionActivity.h"
+#include "ai/AiRecapSource.h"
 #include "clippings/ClippingHighlightGeometry.h"
 #include "clippings/ClippingMatchTracker.h"
 #include "clippings/ClippingTextMatcher.h"
@@ -2528,6 +2531,138 @@ void EpubReaderActivity::onExit() {
   restoreGlobalReaderSettings();
 }
 
+void EpubReaderActivity::openAiRecap() {
+  clearPendingManualPageTurns();
+  int frozenSpine = 0;
+  int frozenPage = 0;
+  uint32_t frozenLayout = 0;
+  {
+    RenderLock lock(*this);
+    // A footnote preview can live after the reading origin in the EPUB. Never
+    // mistake its displayed page for permission to read the intervening book.
+    if (!epub || !section || activeFootnotePreview || !pendingFootnotePreviewAnchor.empty() ||
+        section->currentPage < 0 || section->currentPage >= section->pageCount) {
+      drawToast(renderer, I18N.get(StrId::STR_AI_SOURCE_ERROR));
+      return;
+    }
+    frozenSpine = currentSpineIndex;
+    frozenPage = section->currentPage;
+    frozenLayout = activeSectionLayoutSignature;
+  }
+  // One options screen, allocated only while requested; ordinary page turns
+  // retain no AI settings, text buffers, or network state.
+  auto options = makeUniqueNoThrow<AiRecapOptionsActivity>(renderer, mappedInput);
+  if (!options) {
+    LOG_ERR("AI", "OOM: recap options activity");
+    drawToast(renderer, I18N.get(StrId::STR_MEMORY_ERROR));
+    return;
+  }
+  pauseReadingPaceTimer("ai_recap");
+  startActivityForResult(
+      std::move(options), [this, frozenSpine, frozenPage, frozenLayout](const ActivityResult& result) {
+        if (result.isCancelled) {
+          resumeReadingPaceTimer("ai_recap_cancelled");
+          requestUpdate();
+          return;
+        }
+        const auto& selected = std::get<AiRecapOptionsResult>(result.data);
+        AiRecap::Job job;
+        job.provider = selected.provider == AiRecapProvider::Anthropic ? "anthropic" : "openai";
+        job.model = selected.model;
+        job.readerOrientation = SETTINGS.orientation;
+        AiRecap::CaptureError error = AiRecap::CaptureError::InvalidRange;
+        bool savedProgress = false;
+        {
+          RenderLock lock(*this);
+          if (epub && section && !activeFootnotePreview && pendingFootnotePreviewAnchor.empty() &&
+              currentSpineIndex == frozenSpine && section->currentPage == frozenPage &&
+              activeSectionLayoutSignature == frozenLayout && buildViewportWidth > 0 && buildViewportHeight > 0) {
+            const auto profile = buildProfileForRenderMode(normalizeRenderMode(SETTINGS.epubRenderMode));
+            const auto spec =
+                readerRenderSpecForProfile(activeSectionFontId, buildViewportWidth, buildViewportHeight, profile);
+            // Never use a different pagination to decide the frozen page boundary.
+            if (readerRenderSpecSignature(spec) == frozenLayout) {
+              int chapterStart = frozenSpine;
+              int chapterEnd = frozenSpine;
+              epub->resolveChapterGroupRange(frozenSpine, chapterStart, chapterEnd);
+              int previousStart = -1;
+              if (chapterStart > 0) {
+                int previousEnd = chapterStart - 1;
+                previousStart = chapterStart - 1;
+                epub->resolveChapterGroupRange(chapterStart - 1, previousStart, previousEnd);
+              }
+              GUI.drawPopup(renderer, I18N.get(StrId::STR_AI_PREPARING));
+              error = AiRecap::capture(
+                  *epub, *section, renderer, spec, static_cast<uint16_t>(frozenSpine),
+                  static_cast<uint16_t>(frozenPage), chapterStart, previousStart, selected.options, job,
+                  [](void* context) {
+                    auto* reader = static_cast<EpubReaderActivity*>(context);
+                    reader->mappedInput.update();
+                    return reader->mappedInput.isPressed(MappedInputManager::Button::Back);
+                  },
+                  this);
+              if (error == AiRecap::CaptureError::None) {
+                savedProgress = saveProgress(frozenSpine, frozenPage, section->pageCount);
+              }
+            }
+          }
+        }
+        if (error != AiRecap::CaptureError::None || !savedProgress) {
+          AiRecap::clearPendingJob();
+          StrId message = StrId::STR_AI_SOURCE_ERROR;
+          switch (error) {
+            case AiRecap::CaptureError::NoPreviousChapter:
+              message = StrId::STR_AI_NO_PREVIOUS_CHAPTER;
+              break;
+            case AiRecap::CaptureError::TooLarge:
+              message = StrId::STR_AI_TOO_LARGE;
+              break;
+            case AiRecap::CaptureError::EmptyText:
+              message = StrId::STR_AI_NO_TEXT;
+              break;
+            case AiRecap::CaptureError::StorageFailure:
+              message = StrId::STR_AI_STORAGE_ERROR;
+              break;
+            case AiRecap::CaptureError::Cancelled:
+              message = StrId::STR_AI_CANCELLED;
+              break;
+            case AiRecap::CaptureError::OutOfMemory:
+              message = StrId::STR_MEMORY_ERROR;
+              break;
+            default:
+              break;
+          }
+          if (error == AiRecap::CaptureError::None && !savedProgress) message = StrId::STR_SAVE_PROGRESS_FAILED;
+          LOG_ERR("AI", "Recap capture failed: status=%u progress=%d", static_cast<unsigned>(error), savedProgress);
+          auto messageActivity = makeUniqueNoThrow<AiRecapActivity>(renderer, mappedInput, message);
+          if (messageActivity) {
+            // Keep the explanation readable until Back, without discarding the
+            // already-open EPUB or activating Wi-Fi after capture failed.
+            startActivityForResult(std::move(messageActivity), [this](const ActivityResult&) {
+              resumeReadingPaceTimer("ai_recap_failed");
+              requestUpdate();
+            });
+            return;
+          }
+          LOG_ERR("AI", "OOM: recap error screen");
+          drawToast(renderer, I18N.get(message));
+          resumeReadingPaceTimer("ai_recap_failed");
+          requestUpdate();
+          return;
+        }
+        auto recap = makeUniqueNoThrow<AiRecapActivity>(renderer, mappedInput, true);
+        if (!recap) {
+          LOG_ERR("AI", "OOM: recap network handoff");
+          AiRecap::clearPendingJob();
+          drawToast(renderer, I18N.get(StrId::STR_MEMORY_ERROR));
+          resumeReadingPaceTimer("ai_recap_failed");
+          requestUpdate();
+          return;
+        }
+        activityManager.replaceActivity(std::move(recap));
+      });
+}
+
 void EpubReaderActivity::openReaderMenu() {
   clearPendingManualPageTurns();
   int chapterPage = 0;
@@ -4216,6 +4351,9 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuAction action, const 
       }
       break;
     }
+    case EpubReaderMenuAction::AI_RECAP:
+      openAiRecap();
+      break;
     case EpubReaderMenuAction::NEARBY_POSITION_SYNC: {
       const int currentPage = section ? section->currentPage : nextPageNumber;
       const int totalPages = section ? section->estimatedTotalPages() : std::max(1, cachedChapterTotalPageCount);

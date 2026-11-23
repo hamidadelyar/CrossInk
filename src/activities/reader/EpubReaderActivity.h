@@ -401,6 +401,7 @@ class EpubReaderActivity final : public Activity {
   void handleBookStatsReturn(bool returnToReaderMenu);
   void resetCurrentBookStatsAfterDelete();
   void openFileTransfer();
+  void openAiRecap();
   void openAutoPageTurnIntervalPicker(bool ignoreInitialConfirmRelease = false, bool returnToReaderMenu = false);
   void startClipSelection(const DictionaryClippingRequest* dictionaryRequest = nullptr,
                           bool ignoreInitialBackRelease = false);

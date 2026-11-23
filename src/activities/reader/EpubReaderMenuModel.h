@@ -35,6 +35,7 @@ enum class EpubReaderMenuAction : uint8_t {
   SET_BOOK_DICTIONARY,
   STATUS_BAR_SETTINGS,
   RESET_BOOK_READER_SETTINGS,
+  AI_RECAP,
 };
 
 enum class ReaderDrawerTab : uint8_t { Font = 0, Layout = 1, More = 2, Location = 3, Settings = 4, Count };
@@ -150,6 +151,7 @@ enum class ReaderDrawerCatalogItem : uint8_t {
   SyncProgress,
   NearbyPositionSync,
   SendNearbyBook,
+  AiRecap,
 };
 
 struct ReaderDrawerAvailability {
@@ -203,6 +205,7 @@ constexpr ReaderDrawerCatalog makeReaderDrawerCatalog(const ReaderDrawerAvailabi
   more.add(ReaderDrawerCatalogItem::GoToPercent);
   if (available.hasStablePageNumbers) more.add(ReaderDrawerCatalogItem::GoToStablePage);
   more.add(ReaderDrawerCatalogItem::AutoPageTurn);
+  more.add(ReaderDrawerCatalogItem::AiRecap);
   if (available.buttonDevice && available.globalStatsEnabled && available.bookStatsEnabled)
     more.add(ReaderDrawerCatalogItem::ReadingStats);
   if (available.hasFootnotes) more.add(ReaderDrawerCatalogItem::Footnotes);

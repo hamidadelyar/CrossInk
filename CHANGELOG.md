@@ -1,3 +1,11 @@
+## [Unreleased]
+
+### Added
+
+- Experimental on-demand EPUB recaps for the previous chapter, a chosen number of screen pages, or the book so far, including the current page, with short and detailed output.
+- Direct OpenAI and Anthropic requests using a user-selected model and an API key stored in the reader's internal settings; requests verify HTTPS certificates and are never retried automatically.
+- Bounded earlier context, explicit request-size limits, and offline reuse of recaps only when the exact source passages and recap settings match.
+
 ## [v1.6.1] - 2026-10-03
 
 ### Added

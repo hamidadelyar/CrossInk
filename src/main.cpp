@@ -94,6 +94,7 @@ inline esp_sleep_wakeup_cause_t esp_sleep_get_wakeup_cause() { return ESP_SLEEP_
 #include "activities/ActivityManager.h"
 #include "activities/boot_sleep/ImageFolderIndex.h"
 #include "activities/home/BookActions.h"
+#include "activities/reader/AiRecapActivity.h"
 #include "activities/reader/KOReaderSyncActivity.h"
 #include "activities/reader/ReaderUtils.h"
 #include "activities/reader/ReadingStatsUtils.h"
@@ -1519,6 +1520,17 @@ void setup() {
       case NetworkBootTarget::OPDS:
         launched = activityManager.goToOpdsServer(snapshotPayload, true);
         break;
+      case NetworkBootTarget::AI_RECAP: {
+        // The reader and fonts have been released before this minimal boot.
+        auto recapActivity = makeUniqueNoThrow<AiRecapActivity>(renderer, mappedInputManager);
+        if (recapActivity) {
+          activityManager.replaceActivity(std::move(recapActivity));
+          launched = true;
+        } else {
+          LOG_ERR("MAIN", "OOM: AI recap activity after minimal boot");
+        }
+        break;
+      }
       case NetworkBootTarget::KOREADER_SYNC:
         launched = startGlobalSyncProgress(true, decodeKOReaderSyncOrientation(snapshotPayload));
         break;

@@ -1793,6 +1793,9 @@ void EpubReaderDrawerActivity::activateRow(const RowId row) {
 
   EpubReaderMenuAction action = EpubReaderMenuAction::GO_HOME;
   switch (row) {
+    case RowId::AiRecap:
+      action = EpubReaderMenuAction::AI_RECAP;
+      break;
     case RowId::ReadingStats:
       action = EpubReaderMenuAction::READING_STATS;
       break;
@@ -3047,6 +3050,8 @@ const char* EpubReaderDrawerActivity::rowLabel(const RowId row) const {
       return tr(STR_READING_STATS);
     case RowId::SyncProgress:
       return tr(STR_SYNC_PROGRESS);
+    case RowId::AiRecap:
+      return tr(STR_AI_RECAP);
     case RowId::NearbyPositionSync:
       return tr(STR_NEARBY_POSITION_SYNC);
     case RowId::SendNearbyBook:
